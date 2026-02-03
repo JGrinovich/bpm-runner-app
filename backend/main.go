@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/JGrinovich/bpm-runner-app/backend/internal/api"
+	"github.com/JGrinovich/bpm-runner-app/backend/internal/db"
 )
 
 func main() {
@@ -16,7 +16,10 @@ func main() {
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
 	}
-
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -25,7 +28,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dbURL)
+	pool, err := db.NewPool(ctx, dbURL)
 	if err != nil {
 		log.Fatalf("db connect failed: %v", err)
 	}
@@ -36,20 +39,14 @@ func main() {
 	}
 	log.Println("✅ backend connected to postgres")
 
-	mux := http.NewServeMux()
+	srv := &api.Server{DB: pool, JWTSecret: jwtSecret}
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		if err := pool.Ping(ctx); err != nil {
-			http.Error(w, "db not ready", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
+	httpServer := &http.Server{
+		Addr:              ":" + port,
+		Handler:           srv.Routes(),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 
-	addr := fmt.Sprintf(":%s", port)
-	log.Printf("🚀 backend listening on %s\n", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Printf("🚀 backend listening on :%s\n", port)
+	log.Fatal(httpServer.ListenAndServe())
 }
