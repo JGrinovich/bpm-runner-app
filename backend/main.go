@@ -43,7 +43,7 @@ func main() {
 
 	httpServer := &http.Server{
 		Addr:              ":" + port,
-		Handler:           srv.Routes(),
+		Handler:           api.WithCORS(srv.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

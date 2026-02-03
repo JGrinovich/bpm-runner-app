@@ -1,21 +1,65 @@
-import { useEffect, useState } from "react";
+import { Routes, Route, Navigate, Link, useNavigate } from "react-router-dom";
+import { clearToken, getToken } from "./api";
+import AuthPage from "./pages/AuthPage";
+import LibraryPage from "./pages/LibraryPage";
+import TrackPage from "./pages/TrackPage";
 
-export default function App() {
-  const [status, setStatus] = useState("checking...");
-  const apiBase = import.meta.env.VITE_API_BASE_URL;
-
-  useEffect(() => {
-    fetch(`${apiBase}/healthz`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error("not ok"))))
-      .then((t) => setStatus(`backend: ${t}`))
-      .catch(() => setStatus("backend: unavailable"));
-  }, [apiBase]);
+function Nav() {
+  const nav = useNavigate();
+  const authed = !!getToken();
 
   return (
-    <div style={{ fontFamily: "system-ui", padding: 24 }}>
-      <h1>BPM Runner MVP</h1>
-      <p>API Base URL: {apiBase}</p>
-      <p>Status: {status}</p>
+    <div style={{ display: "flex", gap: 12, padding: 12, borderBottom: "1px solid #ddd" }}>
+      <Link to="/library">Library</Link>
+      <div style={{ flex: 1 }} />
+      {authed ? (
+        <button
+          onClick={() => {
+            clearToken();
+            nav("/auth");
+          }}
+        >
+          Logout
+        </button>
+      ) : (
+        <Link to="/auth">Login</Link>
+      )}
+    </div>
+  );
+}
+
+function RequireAuth({ children }) {
+  if (!getToken()) return <Navigate to="/auth" replace />;
+  return children;
+}
+
+export default function App() {
+  return (
+    <div style={{ fontFamily: "system-ui" }}>
+      <Nav />
+      <div style={{ padding: 16, maxWidth: 900, margin: "0 auto" }}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/library" replace />} />
+          <Route path="/auth" element={<AuthPage />} />
+          <Route
+            path="/library"
+            element={
+              <RequireAuth>
+                <LibraryPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/tracks/:id"
+            element={
+              <RequireAuth>
+                <TrackPage />
+              </RequireAuth>
+            }
+          />
+          <Route path="*" element={<div>Not found</div>} />
+        </Routes>
+      </div>
     </div>
   );
 }
