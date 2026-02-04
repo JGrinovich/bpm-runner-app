@@ -25,6 +25,9 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       PORT: ${API_PORT}
       JWT_SECRET: ${JWT_SECRET}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - ../tmp/uploads:/data/uploads
     ports:
       - "${API_PORT}:${API_PORT}"
     depends_on:
@@ -38,9 +41,13 @@ services:
     container_name: bpm_worker
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - ../tmp/uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
+
 
 volumes:
   pgdata:
