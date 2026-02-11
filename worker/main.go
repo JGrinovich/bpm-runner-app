@@ -20,6 +20,11 @@ import (
 )
 
 func main() {
+	if os.Getenv("WORKER_DISABLED") == "1" {
+		log.Println("🛑 worker disabled via WORKER_DISABLED=1")
+		return
+	}
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		log.Fatal("DATABASE_URL is required")
