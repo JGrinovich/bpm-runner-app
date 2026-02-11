@@ -1,16 +1,22 @@
 package api
 
-import "net/http"
+import (
+	"net/http"
+	"os"
+	"strings"
+)
 
 func WithCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 
-		allowed := map[string]bool{
-			"http://localhost:5173": true,
-			"http://localhost:5174": true,
-			"http://127.0.0.1:5173": true,
-			"http://127.0.0.1:5174": true,
+		// Build allowlist from env
+		allowed := map[string]bool{}
+		for _, o := range strings.Split(os.Getenv("CORS_ALLOWED_ORIGINS"), ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowed[o] = true
+			}
 		}
 
 		if allowed[origin] {
@@ -20,6 +26,7 @@ func WithCORS(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		}
 
+		// Handle preflight
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

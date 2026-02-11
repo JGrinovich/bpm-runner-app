@@ -5,7 +5,8 @@ COMPOSE_FILE=infra/docker-compose.yml
 
 .PHONY: dev up down logs ps frontend
 
-dev: up frontend
+dev:
+	docker compose --env-file config/.env.dev.example -f infra/docker-compose.yml up -d --build
 
 up:
 	docker compose --env-file .env -f $(COMPOSE_FILE) up -d --build

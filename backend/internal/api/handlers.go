@@ -31,6 +31,8 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/api/tracks/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackByID)))
 	mux.Handle("/api/renders/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
 	mux.Handle("/api/tracks/upload", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackUpload)))
+	mux.Handle("/api/renders/:id", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
+	mux.Handle("/api/render-files/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderFile)))
 
 	// Upload signed-url (stub for Phase 1)
 	mux.Handle("/api/uploads/signed-url", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleSignedURLStub)))

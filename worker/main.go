@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -45,27 +46,55 @@ func main() {
 	log.Printf("📁 worker upload dir: %s\n", uploadDir)
 
 	for {
-		claimed, analysisID, trackID, err := claimNextAnalysisJob(context.Background(), pool)
+		// 1) Try analysis
+		claimedA, analysisID, trackID, err := claimNextAnalysisJob(context.Background(), pool)
 		if err != nil {
-			log.Printf("claim error: %v\n", err)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		if !claimed {
+			log.Printf("analysis claim error: %v\n", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
-		log.Printf("🔎 claimed analysis job id=%s track=%s\n", analysisID, trackID)
+		if claimedA {
+			log.Printf("🔎 claimed analysis job id=%s track=%s\n", analysisID, trackID)
 
-		err = runAnalysisJob(context.Background(), pool, analysisID, trackID)
-		if err != nil {
-			log.Printf("❌ analysis failed id=%s track=%s err=%v\n", analysisID, trackID, err)
-			_ = markAnalysisFailed(context.Background(), pool, analysisID, err.Error())
-		} else {
-			log.Printf("✅ analysis done id=%s track=%s\n", analysisID, trackID)
+			err = runAnalysisJob(context.Background(), pool, analysisID, trackID)
+			if err != nil {
+				log.Printf("❌ analysis failed id=%s track=%s err=%v\n", analysisID, trackID, err)
+				_ = markAnalysisFailed(context.Background(), pool, analysisID, err.Error())
+			} else {
+				log.Printf("✅ analysis done id=%s track=%s\n", analysisID, trackID)
+			}
+
+			// Go back to top; keep draining analysis queue first
+			continue
 		}
+
+		// 2) Try render
+		claimedR, renderID, trackIDR, targetBpm, preservePitch, err := claimNextRenderJob(context.Background(), pool)
+		if err != nil {
+			log.Printf("render claim error: %v\n", err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		if claimedR {
+			log.Printf("🎛️ claimed render job id=%s track=%s target=%.2f preserve_pitch=%v\n",
+				renderID, trackIDR, targetBpm, preservePitch)
+
+			if err := runRenderJob(context.Background(), pool, renderID, trackIDR, targetBpm); err != nil {
+				log.Printf("❌ render failed id=%s err=%v\n", renderID, err)
+				_ = markRenderFailed(context.Background(), pool, renderID, err.Error())
+			} else {
+				log.Printf("✅ render done id=%s\n", renderID)
+			}
+
+			continue
+		}
+
+		// 3) Nothing to do
+		time.Sleep(2 * time.Second)
 	}
+
 }
 
 func claimNextAnalysisJob(ctx context.Context, pool *pgxpool.Pool) (bool, string, string, error) {
@@ -370,86 +399,164 @@ func chooseBestTempo(beatBpm float64, beatConf float64, tempoBpm float64) (chose
 	return best, clamp(conf, 0, 1)
 }
 
-// // aubio tempo prints one beat timestamp per line (seconds)
-// func aubioBeatTimes(ctx context.Context, wavPath string) ([]float64, error) {
-// 	cmd := exec.CommandContext(ctx, "aubio", "tempo", "-i", wavPath)
-// 	stdout, err := cmd.StdoutPipe()
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	stderr, err := cmd.StderrPipe()
-// 	if err != nil {
-// 		return nil, err
-// 	}
+func claimNextRenderJob(ctx context.Context, pool *pgxpool.Pool) (bool, string, string, float64, bool, error) {
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return false, "", "", 0, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
 
-// 	if err := cmd.Start(); err != nil {
-// 		return nil, err
-// 	}
+	var jobID, trackID string
+	var targetBpm float64
+	var preservePitch bool
 
-// 	var beats []float64
-// 	sc := bufio.NewScanner(stdout)
-// 	for sc.Scan() {
-// 		line := strings.TrimSpace(sc.Text())
-// 		if line == "" {
-// 			continue
-// 		}
+	err = tx.QueryRow(ctx, `
+WITH cte AS (
+  SELECT id, track_id, target_bpm, preserve_pitch
+  FROM render_jobs
+  WHERE status='queued'
+  ORDER BY created_at ASC
+  LIMIT 1
+  FOR UPDATE SKIP LOCKED
+)
+UPDATE render_jobs r
+SET status='running', error_message=NULL
+FROM cte
+WHERE r.id = cte.id
+RETURNING r.id, r.track_id, r.target_bpm, r.preserve_pitch;
+`).Scan(&jobID, &trackID, &targetBpm, &preservePitch)
 
-// 		// aubio often prints: "<time> <confidence>"
-// 		fields := strings.Fields(line)
-// 		if len(fields) == 0 {
-// 			continue
-// 		}
+	if err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			_ = tx.Commit(ctx)
+			return false, "", "", 0, false, nil
+		}
+		return false, "", "", 0, false, err
+	}
 
-// 		v, err := strconv.ParseFloat(fields[0], 64)
-// 		if err == nil && v > 0 {
-// 			beats = append(beats, v)
-// 		}
-// 	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, "", "", 0, false, err
+	}
+	return true, jobID, trackID, targetBpm, preservePitch, nil
+}
 
-// 	// read stderr for errors
-// 	serr, _ := ioReadAllString(stderr)
+func markRenderFailed(ctx context.Context, pool *pgxpool.Pool, renderID, msg string) error {
+	if len(msg) > 500 {
+		msg = msg[:500]
+	}
+	_, err := pool.Exec(ctx, `
+UPDATE render_jobs
+SET status='failed',
+    error_message=$1,
+    finished_at=now()
+WHERE id=$2;
+`, msg, renderID)
+	return err
+}
 
-// 	if err := cmd.Wait(); err != nil {
-// 		return nil, fmt.Errorf("aubio tempo error: %w; stderr=%s", err, serr)
-// 	}
-// 	if err := sc.Err(); err != nil {
-// 		return nil, err
-// 	}
+func buildAtempoChain(ratio float64) (string, error) {
+	if ratio <= 0 {
+		return "", fmt.Errorf("invalid ratio: %v", ratio)
+	}
 
-// 	return beats, nil
-// }
+	// Keep each factor within [0.5, 2.0]
+	factors := []float64{}
+	r := ratio
 
-// // BPM computed from median interval to reduce outliers.
-// // Confidence derived from interval consistency (lower dispersion => higher confidence).
-// func bpmFromBeats(beats []float64) (bpm float64, confidence float64) {
-// 	var intervals []float64
-// 	for i := 1; i < len(beats); i++ {
-// 		d := beats[i] - beats[i-1]
-// 		if d > 0.2 && d < 2.0 { // ignore crazy intervals
-// 			intervals = append(intervals, d)
-// 		}
-// 	}
-// 	if len(intervals) < 6 {
-// 		return 0, 0
-// 	}
+	for r > 2.0 {
+		factors = append(factors, 2.0)
+		r /= 2.0
+	}
+	for r < 0.5 {
+		factors = append(factors, 0.5)
+		r /= 0.5
+	}
+	factors = append(factors, r)
 
-// 	sort.Float64s(intervals)
-// 	med := median(intervals)
-// 	bpm = 60.0 / med
+	parts := make([]string, 0, len(factors))
+	for _, f := range factors {
+		// ffmpeg likes a reasonable precision
+		parts = append(parts, fmt.Sprintf("atempo=%.6f", f))
+	}
+	return strings.Join(parts, ","), nil
+}
 
-// 	// Confidence: 1 - (MAD / median), clamped
-// 	// MAD = median absolute deviation
-// 	var absDev []float64
-// 	for _, d := range intervals {
-// 		absDev = append(absDev, math.Abs(d-med))
-// 	}
-// 	sort.Float64s(absDev)
-// 	mad := median(absDev)
+func runRenderJob(ctx context.Context, pool *pgxpool.Pool, renderID, trackID string, targetBpm float64) error {
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "/data/uploads"
+	}
+	outputDir := os.Getenv("OUTPUT_DIR")
+	if outputDir == "" {
+		outputDir = "/data/outputs"
+	}
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return err
+	}
 
-// 	// normalize; typical good tracks have small MAD
-// 	confidence = 1.0 - (mad / med)
-// 	return bpm, confidence
-// }
+	// Get input path from tracks
+	var srcPath string
+	err := pool.QueryRow(ctx, `SELECT original_object_key FROM tracks WHERE id=$1`, trackID).Scan(&srcPath)
+	if err != nil {
+		return fmt.Errorf("track not found: %w", err)
+	}
+	if _, err := os.Stat(srcPath); err != nil {
+		return fmt.Errorf("input file missing: %s: %w", srcPath, err)
+	}
+
+	// Get detected bpm (must be done)
+	var detectedBpm float64
+	var aStatus string
+	err = pool.QueryRow(ctx, `SELECT bpm, status FROM track_analysis WHERE track_id=$1`, trackID).Scan(&detectedBpm, &aStatus)
+	if err != nil {
+		return fmt.Errorf("missing analysis: %w", err)
+	}
+	if aStatus != "done" || detectedBpm <= 0 {
+		return fmt.Errorf("analysis not ready (status=%s bpm=%v)", aStatus, detectedBpm)
+	}
+
+	// ratio = target/detected
+	ratio := targetBpm / detectedBpm
+	chain, err := buildAtempoChain(ratio)
+	if err != nil {
+		return err
+	}
+
+	tmpDir, err := os.MkdirTemp("", "render-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	workingWav := filepath.Join(tmpDir, "working.wav")
+
+	// 1) normalize to wav mono 44.1k
+	if err := runCmd(ctx, "ffmpeg", "-y", "-i", srcPath, "-ac", "1", "-ar", "44100", workingWav); err != nil {
+		return fmt.Errorf("ffmpeg wav convert failed: %w", err)
+	}
+
+	// 2) apply atempo chain, encode mp3
+	outKey := fmt.Sprintf("%s.mp3", uuid.New().String())
+	outPath := filepath.Join(outputDir, outKey)
+
+	filter := chain
+	// MVP: preserve pitch always (ffmpeg atempo does preserve pitch)
+	if err := runCmd(ctx, "ffmpeg", "-y", "-i", workingWav, "-filter:a", filter, "-codec:a", "libmp3lame", "-q:a", "2", outPath); err != nil {
+		return fmt.Errorf("ffmpeg render failed: %w", err)
+	}
+
+	// 3) update render_jobs
+	_, err = pool.Exec(ctx, `
+UPDATE render_jobs
+SET tempo_ratio=$1,
+    output_object_key=$2,
+    status='done',
+    error_message=NULL,
+    finished_at=now()
+WHERE id=$3;
+`, ratio, outPath, renderID)
+	return err
+}
 
 func median(a []float64) float64 {
 	n := len(a)
