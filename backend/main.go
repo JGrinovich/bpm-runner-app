@@ -9,6 +9,7 @@ import (
 
 	"github.com/JGrinovich/bpm-runner-app/backend/internal/api"
 	"github.com/JGrinovich/bpm-runner-app/backend/internal/db"
+	"github.com/JGrinovich/bpm-runner-app/backend/internal/storage"
 )
 
 func main() {
@@ -39,10 +40,21 @@ func main() {
 	}
 	log.Println("✅ backend connected to postgres")
 
-	srv := &api.Server{DB: pool, JWTSecret: jwtSecret}
+	s3c, err := storage.NewS3(ctx)
+	if err != nil {
+		log.Fatalf("s3 init failed: %v", err)
+	}
+	presigner := storage.NewPresigner(s3c)
+
+	srv := &api.Server{
+		DB:           pool,
+		JWTSecret:    jwtSecret,
+		Presigner:    presigner, // must implement PutPresigner
+		UploadPrefix: "uploads",
+	}
 
 	httpServer := &http.Server{
-		Addr:              ":" + port,
+		Addr:              "0.0.0.0:" + port,
 		Handler:           api.WithCORS(srv.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}

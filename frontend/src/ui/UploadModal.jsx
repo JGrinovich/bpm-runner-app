@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getToken } from "../api";
+import { getToken, apiGetSignedUploadUrl, apiCreateTrack } from "../api";
 
 export default function UploadModal({ onClose, onCreated }) {
   const [file, setFile] = useState(null);
@@ -17,37 +17,51 @@ export default function UploadModal({ onClose, onCreated }) {
       const token = getToken();
       if (!token) throw new Error("Missing auth token");
 
-      const form = new FormData();
-      form.append("file", file);
+      // Step 1: ask backend for signed url + object key
+      const { object_key, signed_put_url } = await apiGetSignedUploadUrl({
+        filename: file.name,
+        mime_type: file.type,
+      });
 
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${import.meta.env.VITE_API_BASE_URL}/api/tracks/upload`);
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      if (!object_key || !signed_put_url) {
+        throw new Error("Signed upload response missing object_key or signed_put_url");
+      }
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          setProgress(Math.round((e.loaded / e.total) * 100));
-        } else {
-          // fallback
-          setProgress((p) => Math.min(95, p + 1));
-        }
-      };
+      // Step 2: upload directly to R2 with PUT (XHR for progress)
+      await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", signed_put_url);
 
-      const result = await new Promise((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(xhr.responseText);
+        // Must match the Content-Type used when presigning
+        xhr.setRequestHeader("Content-Type", file.type);
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setProgress(Math.round((e.loaded / e.total) * 100));
           } else {
-            reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+            setProgress((p) => Math.min(95, p + 1));
           }
         };
-        xhr.onerror = () => reject(new Error("Network error during upload"));
-        xhr.send(form);
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) resolve();
+          else reject(new Error(xhr.responseText || `PUT failed (${xhr.status})`));
+        };
+        xhr.onerror = () => reject(new Error("Network error during PUT upload"));
+
+        xhr.send(file);
       });
 
       setProgress(100);
-      // Optionally parse response:
-      // const data = JSON.parse(result);
+
+      // Step 3: create track row (store key in DB)
+      await apiCreateTrack({
+        title: "", // optional
+        source_filename: file.name,
+        mime_type: file.type,
+        original_object_key: object_key,
+      });
+
       onCreated();
     } catch (e) {
       setErr(e.message || "Upload failed");
@@ -55,6 +69,7 @@ export default function UploadModal({ onClose, onCreated }) {
       setBusy(false);
     }
   }
+
 
   return (
     <div

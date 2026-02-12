@@ -12,9 +12,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type PutPresigner interface {
+	PresignPut(ctx context.Context, key, contentType string, ttl time.Duration) (string, error)
+}
+
 type Server struct {
 	DB        *pgxpool.Pool
 	JWTSecret string
+
+	Presigner    PutPresigner
+	UploadPrefix string // "uploads"
 }
 
 func (s *Server) Routes() http.Handler {
@@ -31,11 +38,11 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/api/tracks/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackByID)))
 	mux.Handle("/api/renders/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
 	mux.Handle("/api/tracks/upload", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackUpload)))
-	mux.Handle("/api/renders/:id", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
+	// mux.Handle("/api/renders/:id", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
 	mux.Handle("/api/render-files/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderFile)))
 
 	// Upload signed-url (stub for Phase 1)
-	mux.Handle("/api/uploads/signed-url", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleSignedURLStub)))
+	mux.Handle("/api/uploads/signed-url", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleSignedUploadURL)))
 
 	return mux
 }
@@ -143,6 +150,11 @@ func (s *Server) handleTracks(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.SourceFilename == "" || req.MimeType == "" || req.OriginalObjectKey == "" {
 			http.Error(w, "source_filename, mime_type, original_object_key required", http.StatusBadRequest)
+			return
+		}
+
+		if strings.HasPrefix(req.OriginalObjectKey, "local://") || strings.HasPrefix(req.OriginalObjectKey, "/") {
+			http.Error(w, "original_object_key must be an object storage key (uploads/...)", http.StatusBadRequest)
 			return
 		}
 
@@ -477,9 +489,9 @@ func (s *Server) handleRenderByID(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (s *Server) handleSignedURLStub(w http.ResponseWriter, r *http.Request) {
-	// Phase 1: not implementing real S3 signed URLs yet
-	writeJSON(w, http.StatusNotImplemented, map[string]any{
-		"message": "signed-url not implemented in Phase 1 (use local upload in Phase 3)",
-	})
-}
+// func (s *Server) handleSignedURLStub(w http.ResponseWriter, r *http.Request) {
+// 	// Phase 1: not implementing real S3 signed URLs yet
+// 	writeJSON(w, http.StatusNotImplemented, map[string]any{
+// 		"message": "signed-url not implemented in Phase 1 (use local upload in Phase 3)",
+// 	})
+// }

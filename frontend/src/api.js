@@ -71,3 +71,48 @@ export const apiRender = (trackId, payload) =>
   request(`/api/tracks/${trackId}/render`, { method: "POST", body: payload });
 
 export const apiGetRender = (renderId) => request(`/api/renders/${renderId}`);
+
+/**
+ * =========================
+ * Phase B: Signed uploads
+ * =========================
+ */
+
+// 1) Ask backend for signed PUT URL + object key
+export async function apiGetSignedUploadUrl({ filename, mime_type }) {
+  return request("/api/uploads/signed-url", {
+    method: "POST",
+    body: { filename, mime_type },
+    auth: true,
+  }); // returns { object_key, signed_put_url }
+}
+
+// 2) Upload file directly to R2 via signed PUT URL
+export async function putToSignedUrl(signedPutUrl, file) {
+  const res = await fetch(signedPutUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+  if (!res.ok) throw new Error(`PUT failed: ${res.status}`);
+}
+
+// 3) Convenience helper: full upload flow -> returns created track {id: ...}
+export async function apiUploadTrackViaSignedUrl(file, { title = "" } = {}) {
+  // Step 1: signed URL
+  const { object_key, signed_put_url } = await apiGetSignedUploadUrl({
+    filename: file.name,
+    mime_type: file.type,
+  });
+
+  // Step 2: direct PUT to R2
+  await putToSignedUrl(signed_put_url, file);
+
+  // Step 3: create track row in DB
+  return apiCreateTrack({
+    title,
+    source_filename: file.name,
+    mime_type: file.type,
+    original_object_key: object_key,
+  });
+}
