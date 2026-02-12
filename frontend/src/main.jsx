@@ -12,7 +12,7 @@ if (p) {
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename="/bpm-runner-app">
       <App />
     </BrowserRouter>
   </React.StrictMode>
