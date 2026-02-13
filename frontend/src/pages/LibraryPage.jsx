@@ -47,7 +47,7 @@ export default function LibraryPage() {
       <ul style={{ paddingLeft: 16 }}>
         {tracks.map((t) => (
           <li key={t.id} style={{ marginBottom: 6 }}>
-            <Link to={`tracks/${t.id}`}>
+            <Link to={`/tracks/${t.id}`}>
               {t.title || t.source_filename}{" "}
               <span style={{ color: "#666" }}>({t.mime_type})</span>
             </Link>
