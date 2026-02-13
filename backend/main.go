@@ -40,21 +40,15 @@ func main() {
 	}
 	log.Println("✅ backend connected to postgres")
 
-	r2, err := storage.NewR2Presigner(
-		ctx,
-		os.Getenv("R2_ACCOUNT_ID"),
-		os.Getenv("R2_ACCESS_KEY_ID"),
-		os.Getenv("R2_SECRET_ACCESS_KEY"),
-		os.Getenv("R2_BUCKET"),
-	)
+	r2, err := storage.NewR2(ctx)
 	if err != nil {
-		log.Fatalf("r2 presigner init failed: %v", err)
+		log.Fatalf("r2 init failed: %v", err)
 	}
 
 	srv := &api.Server{
 		DB:           pool,
 		JWTSecret:    jwtSecret,
-		Presigner:    r2,
+		R2:           r2,
 		UploadPrefix: "uploads",
 	}
 

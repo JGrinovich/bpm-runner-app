@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/JGrinovich/bpm-runner-app/backend/internal/auth"
+	"github.com/JGrinovich/bpm-runner-app/backend/internal/storage"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,7 +21,7 @@ type Server struct {
 	DB        *pgxpool.Pool
 	JWTSecret string
 
-	Presigner    PutPresigner
+	R2           *storage.R2
 	UploadPrefix string // "uploads"
 }
 
@@ -37,8 +38,6 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("/api/tracks", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTracks)))
 	mux.Handle("/api/tracks/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackByID)))
 	mux.Handle("/api/renders/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
-	mux.Handle("/api/tracks/upload", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackUpload)))
-	// mux.Handle("/api/renders/:id", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
 	mux.Handle("/api/render-files/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderFile)))
 
 	// Upload signed-url (stub for Phase 1)
