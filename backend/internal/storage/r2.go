@@ -15,13 +15,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
-type R2 struct {
+type R2Client struct {
 	Bucket    string
 	S3        *s3.Client
 	Presigner *s3.PresignClient
 }
 
-func NewR2(ctx context.Context) (*R2, error) {
+func NewR2(ctx context.Context) (*R2Client, error) {
 	accountID := os.Getenv("R2_ACCOUNT_ID")
 	accessKey := os.Getenv("R2_ACCESS_KEY_ID")
 	secretKey := os.Getenv("R2_SECRET_ACCESS_KEY")
@@ -56,7 +56,7 @@ func NewR2(ctx context.Context) (*R2, error) {
 		o.UsePathStyle = true // REQUIRED for R2
 	})
 
-	return &R2{
+	return &R2Client{
 		Bucket:    bucket,
 		S3:        client,
 		Presigner: s3.NewPresignClient(client),
@@ -65,7 +65,7 @@ func NewR2(ctx context.Context) (*R2, error) {
 
 // ---- Presign PUT (browser upload) ----
 
-func (r *R2) SignedPutURL(ctx context.Context, key, contentType string, ttl time.Duration) (string, error) {
+func (r *R2Client) SignedPutURL(ctx context.Context, key, contentType string, ttl time.Duration) (string, error) {
 	out, err := r.Presigner.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(r.Bucket),
 		Key:         aws.String(key),
@@ -81,7 +81,7 @@ func (r *R2) SignedPutURL(ctx context.Context, key, contentType string, ttl time
 
 // ---- Server-side streaming (for /api/render-files/:id) ----
 
-func (r *R2) GetObjectStream(ctx context.Context, key string) (io.ReadCloser, string, error) {
+func (r *R2Client) GetObjectStream(ctx context.Context, key string) (io.ReadCloser, string, error) {
 	out, err := r.S3.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(r.Bucket),
 		Key:    aws.String(key),
