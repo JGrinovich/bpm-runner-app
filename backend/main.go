@@ -40,16 +40,21 @@ func main() {
 	}
 	log.Println("✅ backend connected to postgres")
 
-	s3c, err := storage.NewS3(ctx)
+	r2, err := storage.NewR2Presigner(
+		ctx,
+		os.Getenv("R2_ACCOUNT_ID"),
+		os.Getenv("R2_ACCESS_KEY_ID"),
+		os.Getenv("R2_SECRET_ACCESS_KEY"),
+		os.Getenv("R2_BUCKET"),
+	)
 	if err != nil {
-		log.Fatalf("s3 init failed: %v", err)
+		log.Fatalf("r2 presigner init failed: %v", err)
 	}
-	presigner := storage.NewPresigner(s3c)
 
 	srv := &api.Server{
 		DB:           pool,
 		JWTSecret:    jwtSecret,
-		Presigner:    presigner, // must implement PutPresigner
+		Presigner:    r2,
 		UploadPrefix: "uploads",
 	}
 
