@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"os"
@@ -42,6 +43,8 @@ type signedURLResp struct {
 }
 
 func (s *Server) handleSignedUploadURL(w http.ResponseWriter, r *http.Request) {
+	log.Println("✅ handleSignedURL HIT")
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
