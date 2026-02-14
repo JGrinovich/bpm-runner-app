@@ -54,9 +54,6 @@ func main() {
 	}
 	log.Println("✅ worker connected to postgres")
 
-<<<<<<< HEAD
-	r2c, err := storage.NewR2Client(startupCtx, r2AccountID, r2AccessKey, r2SecretKey, r2Bucket)
-=======
 	// R2 client init
 	r2AccountID := os.Getenv("R2_ACCOUNT_ID")
 	r2AccessKey := os.Getenv("R2_ACCESS_KEY_ID")
@@ -67,7 +64,6 @@ func main() {
 	}
 
 	r2c, err := storage.NewR2Client(ctx, r2AccountID, r2AccessKey, r2SecretKey, r2Bucket)
->>>>>>> b0beeab (temp commit before rebase)
 	if err != nil {
 		log.Fatalf("r2 init failed: %v", err)
 	}
