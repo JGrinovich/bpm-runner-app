@@ -54,7 +54,20 @@ func main() {
 	}
 	log.Println("✅ worker connected to postgres")
 
+<<<<<<< HEAD
 	r2c, err := storage.NewR2Client(startupCtx, r2AccountID, r2AccessKey, r2SecretKey, r2Bucket)
+=======
+	// R2 client init
+	r2AccountID := os.Getenv("R2_ACCOUNT_ID")
+	r2AccessKey := os.Getenv("R2_ACCESS_KEY_ID")
+	r2SecretKey := os.Getenv("R2_SECRET_ACCESS_KEY")
+	r2Bucket := os.Getenv("R2_BUCKET")
+	if r2AccountID == "" || r2AccessKey == "" || r2SecretKey == "" || r2Bucket == "" {
+		log.Fatal("R2 env vars required: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET")
+	}
+
+	r2c, err := storage.NewR2Client(ctx, r2AccountID, r2AccessKey, r2SecretKey, r2Bucket)
+>>>>>>> b0beeab (temp commit before rebase)
 	if err != nil {
 		log.Fatalf("r2 init failed: %v", err)
 	}
@@ -75,10 +88,14 @@ func main() {
 		if claimedA {
 			log.Printf("🔎 claimed analysis job id=%s track=%s\n", analysisID, trackID)
 
+<<<<<<< HEAD
 			jobCtx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
 			err = runAnalysisJob(jobCtx, pool, r2c, analysisID, trackID)
 			cancel()
 
+=======
+			err = runAnalysisJob(context.Background(), pool, r2c, analysisID, trackID)
+>>>>>>> b0beeab (temp commit before rebase)
 			if err != nil {
 				log.Printf("❌ analysis failed id=%s track=%s err=%v\n", analysisID, trackID, err)
 				_ = markAnalysisFailed(context.Background(), pool, analysisID, err.Error())
@@ -159,9 +176,16 @@ RETURNING ta.id, ta.track_id;
 }
 
 func runAnalysisJob(ctx context.Context, pool *pgxpool.Pool, r2c *storage.R2Client, analysisID, trackID string) error {
+<<<<<<< HEAD
 	// NOTE: this is now an R2 object key (e.g. uploads/xyz.mp3)
 	var srcKey string
 	if err := pool.QueryRow(ctx, `SELECT original_object_key FROM tracks WHERE id=$1`, trackID).Scan(&srcKey); err != nil {
+=======
+	// Get R2 object key from tracks
+	var srcKey string
+	err := pool.QueryRow(ctx, `SELECT original_object_key FROM tracks WHERE id=$1`, trackID).Scan(&srcKey)
+	if err != nil {
+>>>>>>> b0beeab (temp commit before rebase)
 		return fmt.Errorf("track not found: %w", err)
 	}
 
@@ -171,6 +195,7 @@ func runAnalysisJob(ctx context.Context, pool *pgxpool.Pool, r2c *storage.R2Clie
 	}
 	defer os.RemoveAll(tmpDir)
 
+<<<<<<< HEAD
 	inputPath := filepath.Join(tmpDir, "input.bin")
 	if err := r2c.DownloadToFile(ctx, srcKey, inputPath); err != nil {
 		return err
@@ -182,6 +207,19 @@ func runAnalysisJob(ctx context.Context, pool *pgxpool.Pool, r2c *storage.R2Clie
 	if err := runCmd(ctx, "ffmpeg", "-y",
 		"-ss", "45", "-t", "90",
 		"-i", inputPath,
+=======
+	// Download from R2 to temp file
+	inputPath := filepath.Join(tmpDir, "input.bin")
+	if err := r2c.DownloadToFile(ctx, srcKey, inputPath); err != nil {
+		return fmt.Errorf("failed to download from R2: %w", err)
+	}
+
+	workingWav := filepath.Join(tmpDir, "working.wav")
+	// 1) Convert to consistent WAV
+	if err := runCmd(ctx, "ffmpeg", "-y",
+		"-ss", "45", "-t", "90",
+		"-i", inputPath, // Use downloaded file
+>>>>>>> b0beeab (temp commit before rebase)
 		"-ac", "1", "-ar", "44100",
 		workingWav,
 	); err != nil {

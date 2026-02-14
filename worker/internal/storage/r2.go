@@ -19,7 +19,7 @@ type R2Client struct {
 
 func NewR2Client(ctx context.Context, accountID, accessKeyID, secretAccessKey, bucket string) (*R2Client, error) {
 	if accountID == "" || accessKeyID == "" || secretAccessKey == "" || bucket == "" {
-		return nil, fmt.Errorf("missing R2 env vars (R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET)")
+		return nil, fmt.Errorf("missing R2 env vars")
 	}
 
 	endpoint := "https://" + accountID + ".r2.cloudflarestorage.com"
@@ -44,7 +44,7 @@ func NewR2Client(ctx context.Context, accountID, accessKeyID, secretAccessKey, b
 	}
 
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
-		o.UsePathStyle = true // REQUIRED for R2
+		o.UsePathStyle = true
 	})
 
 	return &R2Client{Bucket: bucket, S3: client}, nil
