@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { apiCreateTrack } from "../api";
+import { getToken } from "../api";
 
 export default function UploadModal({ onClose, onCreated }) {
   const [file, setFile] = useState(null);
@@ -7,36 +7,51 @@ export default function UploadModal({ onClose, onCreated }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  async function handleCreate() {
+  async function handleUpload() {
     if (!file) return;
     setErr("");
     setBusy(true);
     setProgress(0);
 
-    // Simulate upload progress for Phase 2 UX
-    const start = Date.now();
-    const timer = setInterval(() => {
-      const elapsed = Date.now() - start;
-      const p = Math.min(95, Math.floor((elapsed / 1200) * 100));
-      setProgress(p);
-    }, 80);
-
     try {
-      // Phase 2: fake storage location; Phase 3 will replace this with real upload
-      const payload = {
-        title: file.name,
-        source_filename: file.name,
-        mime_type: file.type || "application/octet-stream",
-        original_object_key: `local://uploads/${file.name}`,
+      const token = getToken();
+      if (!token) throw new Error("Missing auth token");
+
+      const form = new FormData();
+      form.append("file", file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${import.meta.env.VITE_API_BASE_URL}/api/tracks/upload`);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setProgress(Math.round((e.loaded / e.total) * 100));
+        } else {
+          // fallback
+          setProgress((p) => Math.min(95, p + 1));
+        }
       };
 
-      await apiCreateTrack(payload);
+      const result = await new Promise((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(xhr.responseText);
+          } else {
+            reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+          }
+        };
+        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.send(form);
+      });
+
       setProgress(100);
+      // Optionally parse response:
+      // const data = JSON.parse(result);
       onCreated();
     } catch (e) {
-      setErr(e.message || "Failed to create track");
+      setErr(e.message || "Upload failed");
     } finally {
-      clearInterval(timer);
       setBusy(false);
     }
   }
@@ -58,20 +73,16 @@ export default function UploadModal({ onClose, onCreated }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h3 style={{ margin: 0 }}>Upload (Phase 2 UI)</h3>
+          <h3 style={{ margin: 0 }}>Upload</h3>
           <div style={{ flex: 1 }} />
-          <button onClick={onClose}>X</button>
+          <button onClick={onClose} disabled={busy}>X</button>
         </div>
-
-        <p style={{ color: "#666" }}>
-          Phase 2 creates a track record and simulates upload progress. Phase 3 will implement real
-          file upload.
-        </p>
 
         <input
           type="file"
           accept="audio/*"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
+          disabled={busy}
         />
 
         {file && (
@@ -79,19 +90,17 @@ export default function UploadModal({ onClose, onCreated }) {
             <div style={{ height: 10, background: "#eee", borderRadius: 6, overflow: "hidden" }}>
               <div style={{ width: `${progress}%`, height: "100%", background: "#333" }} />
             </div>
-            <p style={{ margin: "6px 0 0", color: "#666" }}>{progress}%</p>
+            <p style={{ margin: "6px 0 0", color: "#667" }}>{progress}%</p>
           </div>
         )}
 
         {err && <p style={{ color: "crimson" }}>{err}</p>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={handleCreate} disabled={!file || busy}>
-            {busy ? "Working..." : "Create Track"}
+          <button onClick={handleUpload} disabled={!file || busy}>
+            {busy ? "Uploading..." : "Upload"}
           </button>
-          <button onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
+          <button onClick={onClose} disabled={busy}>Cancel</button>
         </div>
       </div>
     </div>
