@@ -26,8 +26,10 @@ services:
       PORT: ${API_PORT}
       JWT_SECRET: ${JWT_SECRET}
       UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/outputs
     volumes:
       - ../tmp/uploads:/data/uploads
+      - ../tmp/outputs:/data/outputs
     ports:
       - "${API_PORT}:${API_PORT}"
     depends_on:
@@ -42,8 +44,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL}
       UPLOAD_DIR: /data/uploads
+      OUTPUT_DIR: /data/outputs
     volumes:
       - ../tmp/uploads:/data/uploads
+      - ../tmp/outputs:/data/outputs
     depends_on:
       postgres:
         condition: service_healthy

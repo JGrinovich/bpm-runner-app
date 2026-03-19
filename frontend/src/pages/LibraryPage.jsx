@@ -13,10 +13,12 @@ export default function LibraryPage() {
     setErr("");
     setBusy(true);
     try {
-      const list = await apiListTracks();
+      const res = await apiListTracks();
+      const list = Array.isArray(res) ? res : res?.tracks ?? [];
       setTracks(list);
     } catch (e) {
       setErr(e.message || "Failed to load tracks");
+      setTracks([]);
     } finally {
       setBusy(false);
     }
@@ -40,19 +42,20 @@ export default function LibraryPage() {
       {err && <p style={{ color: "crimson" }}>{err}</p>}
       {busy && <p>Loading...</p>}
 
-      {!busy && tracks.length === 0 && (
+      {!busy && Array.isArray(tracks) && tracks.length === 0 && (
         <p style={{ color: "#666" }}>No tracks yet. Click Upload.</p>
       )}
 
       <ul style={{ paddingLeft: 16 }}>
-        {tracks.map((t) => (
-          <li key={t.id} style={{ marginBottom: 6 }}>
-            <Link to={`/tracks/${t.id}`}>
-              {t.title || t.source_filename}{" "}
-              <span style={{ color: "#666" }}>({t.mime_type})</span>
-            </Link>
-          </li>
-        ))}
+        {Array.isArray(tracks) &&
+          tracks.map((t) => (
+            <li key={t.id} style={{ marginBottom: 6 }}>
+              <Link to={`/tracks/${t.id}`}>
+                {t.title || t.source_filename}{" "}
+                <span style={{ color: "#666" }}>({t.mime_type})</span>
+              </Link>
+            </li>
+          ))}
       </ul>
 
       {showUpload && (

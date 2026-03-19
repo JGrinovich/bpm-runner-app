@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS render_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   track_id uuid NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
   target_bpm numeric NOT NULL,
-  tempo_ratio numeric NOT NULL,
+  tempo_ratio numeric,
   preserve_pitch boolean NOT NULL DEFAULT true,
   status text NOT NULL DEFAULT 'queued',
   output_object_key text,

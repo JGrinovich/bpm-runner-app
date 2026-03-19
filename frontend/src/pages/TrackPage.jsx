@@ -6,6 +6,7 @@ import {
   apiGetRender,
   apiGetTrack,
   apiRender,
+  getToken,
 } from "../api";
 import { poll } from "../poll";
 
@@ -31,6 +32,7 @@ export default function TrackPage() {
   const [beatMode, setBeatMode] = useState("step"); // step | stride
   const [renderStatus, setRenderStatus] = useState(null);
   const [analysisStatus, setAnalysisStatus] = useState(null);
+  const [audioUrl, setAudioUrl] = useState("");
 
   async function refresh() {
     setErr("");
@@ -49,6 +51,43 @@ export default function TrackPage() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  useEffect(() => {
+  let objectUrl = null;
+
+  async function loadAudio() {
+    if (!data?.latest_render?.id || data?.latest_render?.status !== "done") {
+      setAudioUrl("");
+      return;
+    }
+
+    try {
+      const token = getToken();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_BASE_URL}/api/render-files/${data.latest_render.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!res.ok) throw new Error("Failed to fetch rendered audio");
+
+      const blob = await res.blob();
+      objectUrl = URL.createObjectURL(blob);
+      setAudioUrl(objectUrl);
+    } catch (e) {
+      setAudioUrl("");
+    }
+  }
+
+  loadAudio();
+
+  return () => {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  };
+}, [data?.latest_render?.id, data?.latest_render?.status]);
 
   const detectedBpm = data?.analysis?.bpm ?? null;
 
@@ -114,7 +153,7 @@ export default function TrackPage() {
   const analysis = data.analysis;
   const latestRender = data.latest_render;
 
-  return (
+    return (
     <div style={{ display: "grid", gap: 16 }}>
       <div>
         <h2 style={{ marginBottom: 6 }}>{track.title || track.source_filename}</h2>
@@ -159,7 +198,12 @@ export default function TrackPage() {
             Cadence
           </label>
           <label>
-            <input type="radio" checked={mode === "pace"} onChange={() => setMode("pace")} /> Pace
+            <input
+              type="radio"
+              checked={mode === "pace"}
+              onChange={() => setMode("pace")}
+            />{" "}
+            Pace
           </label>
 
           <label>
@@ -188,7 +232,11 @@ export default function TrackPage() {
           <div style={{ marginTop: 10 }}>
             <label>
               Pace (min:sec per mile):{" "}
-              <input value={pace} onChange={(e) => setPace(e.target.value)} placeholder="8:00" />
+              <input
+                value={pace}
+                onChange={(e) => setPace(e.target.value)}
+                placeholder="8:00"
+              />
             </label>
             <p style={{ margin: "6px 0 0", color: "#666" }}>
               MVP note: pace → cadence estimation is crude; cadence mode is more accurate.
@@ -217,9 +265,17 @@ export default function TrackPage() {
           <p style={{ margin: 0 }}>
             Output key: {latestRender?.output_object_key ?? "—"}
           </p>
-          <p style={{ marginTop: 8 }}>
-            (Audio playback appears after Phase 5 when worker produces output files.)
-          </p>
+
+          {latestRender?.status === "done" && audioUrl && (
+            <div style={{ marginTop: 12 }}>
+              <audio controls src={audioUrl} />
+              <div style={{ marginTop: 8 }}>
+                <a href={audioUrl} download="run-synced-track.mp3">
+                  Download MP3
+                </a>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

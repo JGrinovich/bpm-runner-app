@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"github.com/JGrinovich/bpm-runner-app/backend/internal/auth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Server struct {
@@ -25,12 +28,13 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("/api/auth/signup", s.handleSignup)
 	mux.HandleFunc("/api/auth/login", s.handleLogin)
 
-	// Protected (wrap individual handlers)
+	// Protected
 	mux.Handle("/api/me", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleMe)))
 	mux.Handle("/api/tracks", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTracks)))
+	mux.Handle("/api/tracks/upload", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackUpload)))
 	mux.Handle("/api/tracks/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackByID)))
 	mux.Handle("/api/renders/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderByID)))
-	mux.Handle("/api/tracks/upload", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleTrackUpload)))
+	mux.Handle("/api/render-files/", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleRenderFile)))
 
 	// Upload signed-url (stub for Phase 1)
 	mux.Handle("/api/uploads/signed-url", AuthMiddleware(s.JWTSecret, http.HandlerFunc(s.handleSignedURLStub)))
@@ -50,44 +54,53 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSignup(w http.ResponseWriter, r *http.Request) {
+	log.Println("handleSignup: request received")
+
 	if r.Method != http.MethodPost {
+		log.Printf("handleSignup: wrong method: %s", r.Method)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req SignupRequest
-	if err := readJSON(r, &req); err != nil {
-		http.Error(w, "bad json", http.StatusBadRequest)
-		return
+
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
-	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Email == "" || len(req.Password) < 8 {
-		http.Error(w, "email required and password must be >= 8 chars", http.StatusBadRequest)
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("handleSignup: decode error: %v", err)
+		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 
-	hash, err := auth.HashPassword(req.Password)
-	if err != nil {
-		http.Error(w, "hash failed", http.StatusInternalServerError)
+	log.Printf("handleSignup: decoded email=%q password_len=%d", req.Email, len(req.Password))
+
+	if req.Email == "" || req.Password == "" {
+		log.Printf("handleSignup: missing email or password")
+		http.Error(w, "email and password required", http.StatusBadRequest)
 		return
 	}
 
-	var userID string
-	err = s.DB.QueryRow(r.Context(),
-		`INSERT INTO users (email, password_hash) VALUES ($1,$2) RETURNING id`,
-		req.Email, hash,
-	).Scan(&userID)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		// unique violation etc.
-		http.Error(w, "could not create user (maybe email exists)", http.StatusBadRequest)
+		log.Printf("handleSignup: bcrypt error: %v", err)
+		http.Error(w, "failed to hash password", http.StatusInternalServerError)
 		return
 	}
 
-	token, err := auth.SignJWT(userID, s.JWTSecret)
+	_, err = s.DB.Exec(r.Context(), `
+INSERT INTO users (email, password_hash)
+VALUES ($1, $2)
+`, req.Email, string(hash))
 	if err != nil {
-		http.Error(w, "jwt failed", http.StatusInternalServerError)
+		log.Printf("handleSignup: insert error: %v", err)
+		http.Error(w, "could not create user", http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, http.StatusCreated, AuthResponse{Token: token})
+
+	log.Printf("handleSignup: success for email=%q", req.Email)
+	w.WriteHeader(http.StatusCreated)
+	w.Write([]byte(`{"ok":true}`))
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
