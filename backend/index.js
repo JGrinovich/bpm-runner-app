@@ -1,13 +1,14 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), "..", ".env") });
 import express from "express";
 import cors from "cors";
 import multer from "multer";
 import { createHash } from "crypto";
 import { mkdir, stat } from "fs/promises";
 import { createReadStream } from "fs";
-import { join, extname } from "path";
-import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { extname } from "path";
 import { v4 as uuidv4 } from "uuid";
 
 import { initDb } from "./db.js";
@@ -44,7 +45,7 @@ const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // 50 MB
 await mkdir(UPLOAD_DIR, { recursive: true });
 await mkdir(OUTPUT_DIR, { recursive: true });
 
-const db = initDb();
+const db = await initDb();
 console.log("✅ SQLite connected");
 
 const app = express();

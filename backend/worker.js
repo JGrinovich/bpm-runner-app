@@ -7,10 +7,12 @@ import { v4 as uuidv4 } from "uuid";
 function runCmd(name, args) {
   return new Promise((resolve, reject) => {
     const proc = spawn(name, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
     let stderr = "";
+    proc.stdout?.on("data", (d) => (stdout += d.toString()));
     proc.stderr?.on("data", (d) => (stderr += d.toString()));
     proc.on("close", (code) => {
-      if (code === 0) resolve(proc.stdout?.read()?.toString() ?? "");
+      if (code === 0) resolve(stdout);
       else reject(new Error(`${name} ${args.join(" ")}: exit ${code}\n${stderr}`));
     });
     proc.on("error", reject);
@@ -184,21 +186,29 @@ async function runRenderJob(db, renderId, trackId, targetBpm, outputDir) {
 }
 
 function claimAnalysisJob(db) {
-  const row = db.prepare(`
-    UPDATE track_analysis SET status = 'running', error_message = NULL
-    WHERE id = (SELECT id FROM track_analysis WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1)
-    RETURNING id, track_id
-  `).get();
-  return row;
+  return db.transaction(() => {
+    const row = db.prepare(
+      "SELECT id, track_id FROM track_analysis WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+    ).get();
+    if (!row) return null;
+    const r = db.prepare(
+      "UPDATE track_analysis SET status = 'running', error_message = NULL WHERE id = ?"
+    ).run(row.id);
+    return r.changes > 0 ? row : null;
+  })();
 }
 
 function claimRenderJob(db) {
-  const row = db.prepare(`
-    UPDATE render_jobs SET status = 'running', error_message = NULL
-    WHERE id = (SELECT id FROM render_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1)
-    RETURNING id, track_id, target_bpm, preserve_pitch
-  `).get();
-  return row;
+  return db.transaction(() => {
+    const row = db.prepare(
+      "SELECT id, track_id, target_bpm, preserve_pitch FROM render_jobs WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+    ).get();
+    if (!row) return null;
+    const r = db.prepare(
+      "UPDATE render_jobs SET status = 'running', error_message = NULL WHERE id = ?"
+    ).run(row.id);
+    return r.changes > 0 ? row : null;
+  })();
 }
 
 export function runWorkerLoop(db, uploadDir, outputDir) {
@@ -218,6 +228,7 @@ export function runWorkerLoop(db, uploadDir, outputDir) {
           `).run(msg, analysis.id);
           console.error(`[worker] analysis failed ${analysis.id}:`, err.message);
         }
+        setTimeout(poll, 100);
         return;
       }
 
@@ -235,6 +246,7 @@ export function runWorkerLoop(db, uploadDir, outputDir) {
           `).run(msg, render.id);
           console.error(`[worker] render failed ${render.id}:`, err.message);
         }
+        setTimeout(poll, 100);
         return;
       }
     } catch (err) {

@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { mkdir } from "fs/promises";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -6,7 +7,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const dbPath = process.env.DATABASE_PATH || join(__dirname, "..", "data", "bpm.db");
 
-export function initDb() {
+export async function initDb() {
+  await mkdir(join(dirname(dbPath)), { recursive: true });
   const db = new Database(dbPath);
 
   db.exec(`
