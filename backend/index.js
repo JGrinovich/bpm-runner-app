@@ -23,12 +23,7 @@ const PORT = process.env.PORT || 8080;
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(projectRoot, "tmp", "uploads");
 const OUTPUT_DIR = process.env.OUTPUT_DIR || join(projectRoot, "tmp", "outputs");
 
-const ALLOWED_ORIGINS = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-];
+const ALLOWED_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 const ALLOWED_MIMES = new Set([
   "audio/mpeg",
@@ -53,7 +48,7 @@ const app = express();
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+      if (!origin || ALLOWED_ORIGIN_RE.test(origin)) {
         cb(null, true);
       } else {
         cb(null, false);
@@ -104,7 +99,8 @@ app.post("/api/auth/signup", async (req, res) => {
     db.prepare(
       "INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)"
     ).run(id, normEmail, hash);
-    res.status(201).json({ ok: true });
+    const token = signJWT(id, JWT_SECRET);
+    res.status(201).json({ ok: true, token });
   } catch (err) {
     if (err.message?.includes("UNIQUE constraint")) {
       return res.status(400).json({ error: "could not create user" });

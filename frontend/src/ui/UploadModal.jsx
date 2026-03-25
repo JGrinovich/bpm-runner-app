@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { getToken } from "../api";
+import { clearToken, getToken } from "../api";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 export default function UploadModal({ onClose, onCreated }) {
   const [file, setFile] = useState(null);
@@ -21,7 +23,7 @@ export default function UploadModal({ onClose, onCreated }) {
       form.append("file", file);
 
       const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${import.meta.env.VITE_API_BASE_URL}/api/tracks/upload`);
+      xhr.open("POST", `${API_BASE}/api/tracks/upload`);
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
 
       xhr.upload.onprogress = (e) => {
@@ -33,15 +35,37 @@ export default function UploadModal({ onClose, onCreated }) {
         }
       };
 
-      const result = await new Promise((resolve, reject) => {
+      await new Promise((resolve, reject) => {
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve(xhr.responseText);
           } else {
-            reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+            let parsed = null;
+            try {
+              parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            } catch {
+              parsed = null;
+            }
+            const msg =
+              (parsed && (parsed.message || parsed.error)) ||
+              xhr.responseText ||
+              `Upload failed (${xhr.status})`;
+            if (xhr.status === 401) {
+              clearToken();
+              reject(new Error("Session expired. Please log in again."));
+              return;
+            }
+            reject(new Error(msg));
           }
         };
-        xhr.onerror = () => reject(new Error("Network error during upload"));
+        xhr.onerror = () =>
+          reject(
+            new Error(
+              `Network error during upload. Check backend at ${API_BASE} and CORS settings.`
+            )
+          );
+        xhr.ontimeout = () => reject(new Error("Upload timed out"));
+        xhr.timeout = 30000;
         xhr.send(form);
       });
 

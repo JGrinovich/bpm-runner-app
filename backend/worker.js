@@ -15,8 +15,23 @@ function runCmd(name, args) {
       if (code === 0) resolve(stdout);
       else reject(new Error(`${name} ${args.join(" ")}: exit ${code}\n${stderr}`));
     });
-    proc.on("error", reject);
+    proc.on("error", (err) => {
+      if (err && err.code === "ENOENT") {
+        reject(
+          new Error(
+            `Missing required binary: '${name}'. Install it and restart backend.`
+          )
+        );
+        return;
+      }
+      reject(err);
+    });
   });
+}
+
+async function checkDependencies() {
+  await runCmd("ffmpeg", ["-version"]);
+  await runCmd("aubio", ["--help"]);
 }
 
 function median(arr) {
@@ -254,5 +269,12 @@ export function runWorkerLoop(db, uploadDir, outputDir) {
     }
     setTimeout(poll, 2000);
   };
-  setTimeout(poll, 1000);
+  checkDependencies()
+    .then(() => {
+      console.log("[worker] dependencies ready (ffmpeg, aubio)");
+      setTimeout(poll, 1000);
+    })
+    .catch((err) => {
+      console.error(`[worker] startup blocked: ${err.message}`);
+    });
 }

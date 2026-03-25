@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 export function getToken() {
   return localStorage.getItem("token");
@@ -34,8 +34,11 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
   }
 
   if (!res.ok) {
+    if (res.status === 401 && auth) {
+      clearToken();
+    }
     const msg =
-      (data && data.message) ||
+      (data && (data.message || data.error)) ||
       (typeof data === "string" && data) ||
       res.statusText;
     throw new Error(msg);
