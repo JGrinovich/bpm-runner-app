@@ -1,9 +1,20 @@
 import { useState } from "react";
-import { clearToken, getToken } from "../api";
+import { Upload } from "lucide-react";
+
+import { clearToken, getToken } from "@/api";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
-export default function UploadModal({ onClose, onCreated }) {
+export default function UploadModal({ open, onClose, onCreated }) {
   const [file, setFile] = useState(null);
   const [progress, setProgress] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -30,7 +41,6 @@ export default function UploadModal({ onClose, onCreated }) {
         if (e.lengthComputable) {
           setProgress(Math.round((e.loaded / e.total) * 100));
         } else {
-          // fallback
           setProgress((p) => Math.min(95, p + 1));
         }
       };
@@ -70,8 +80,7 @@ export default function UploadModal({ onClose, onCreated }) {
       });
 
       setProgress(100);
-      // Optionally parse response:
-      // const data = JSON.parse(result);
+      setFile(null);
       onCreated();
     } catch (e) {
       setErr(e.message || "Upload failed");
@@ -81,52 +90,70 @@ export default function UploadModal({ onClose, onCreated }) {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.35)",
-        display: "grid",
-        placeItems: "center",
-        padding: 16,
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!v) {
+          setErr("");
+          setFile(null);
+          setProgress(0);
+          onClose();
+        }
       }}
-      onClick={onClose}
     >
-      <div
-        style={{ background: "white", padding: 16, width: "min(520px, 100%)", borderRadius: 8 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h3 style={{ margin: 0 }}>Upload</h3>
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} disabled={busy}>X</button>
-        </div>
+      <DialogContent className="sm:max-w-md border-blue-200/70 bg-card/95 backdrop-blur-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-foreground">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15 text-primary">
+              <Upload className="h-4 w-4" />
+            </span>
+            Upload track
+          </DialogTitle>
+          <DialogDescription>
+            Add an audio file (MP3, WAV, M4A). Max 50&nbsp;MB.
+          </DialogDescription>
+        </DialogHeader>
 
-        <input
-          type="file"
-          accept="audio/*"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          disabled={busy}
-        />
+        <div className="grid gap-4 pt-1">
+          <input
+            type="file"
+            accept="audio/*"
+            disabled={busy}
+            className="text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+          />
 
-        {file && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ height: 10, background: "#eee", borderRadius: 6, overflow: "hidden" }}>
-              <div style={{ width: `${progress}%`, height: "100%", background: "#333" }} />
+          {file && (
+            <div className="space-y-2">
+              <Progress value={progress} />
+              <p className="text-xs text-muted-foreground">{progress}%</p>
             </div>
-            <p style={{ margin: "6px 0 0", color: "#667" }}>{progress}%</p>
+          )}
+
+          {err && (
+            <p className="text-sm text-destructive" role="alert">
+              {err}
+            </p>
+          )}
+
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setErr("");
+                onClose();
+              }}
+              disabled={busy}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleUpload} disabled={!file || busy}>
+              {busy ? "Uploading…" : "Upload"}
+            </Button>
           </div>
-        )}
-
-        {err && <p style={{ color: "crimson" }}>{err}</p>}
-
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button onClick={handleUpload} disabled={!file || busy}>
-            {busy ? "Uploading..." : "Upload"}
-          </button>
-          <button onClick={onClose} disabled={busy}>Cancel</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
